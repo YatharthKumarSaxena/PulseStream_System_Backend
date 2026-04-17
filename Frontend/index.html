@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PulseStream - Health Monitoring Dashboard</title>
+    <link rel="stylesheet" href="styles.css">
+    <!-- Chart.js CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.js"></script>
+    <!-- Socket.IO Client -->
+    <script src="https://cdn.socket.io/4.6.1/socket.io.min.js"></script>
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <header class="header">
+            <div class="header-content">
+                <h1>💓 PulseStream</h1>
+                <p class="subtitle">Real-time Health Monitoring Dashboard</p>
+            </div>
+            <button id="nightModeToggle" class="night-mode-btn" title="Toggle Night Mode">🌙</button>
+        </header>
+
+        <!-- Status Banner -->
+        <div class="status-banner" id="statusBanner">
+            <span class="status-icon" id="statusIcon">--</span>
+            <span class="status-text" id="statusText">Loading...</span>
+        </div>
+
+        <!-- Controls Section -->
+        <section class="controls-section">
+            <div class="control-group">
+                <label for="patientSelect">👤 Select Patient:</label>
+                <input 
+                    type="text" 
+                    id="patientSelect" 
+                    placeholder="Enter Patient ID (e.g., patient_123)"
+                    class="patient-input"
+                >
+                <button id="selectPatientBtn" class="btn btn-primary">Switch Patient</button>
+            </div>
+
+            <div class="control-group">
+                <label>⏱️ Select Time Window:</label>
+                <div class="button-group">
+                    <button class="btn btn-window active" data-window="15">15m</button>
+                    <button class="btn btn-window" data-window="30">30m</button>
+                    <button class="btn btn-window" data-window="60">1h</button>
+                    <button class="btn btn-window" data-window="120">2h</button>
+                    <button class="btn btn-window" data-window="240">4h</button>
+                    <button class="btn btn-window" data-window="360">6h</button>
+                    <button class="btn btn-window" data-window="480">8h</button>
+                    <button class="btn btn-window" data-window="720">12h</button>
+                    <button class="btn btn-window" data-window="960">16h</button>
+                    <button class="btn btn-window" data-window="1440">24h</button>
+                </div>
+            </div>
+
+            <div class="control-group">
+                <span class="connection-status" id="connectionStatus">
+                    🔴 Disconnected
+                </span>
+                <span class="patients-info" id="patientsInfo">👥 Patients: --</span>
+                <button id="viewToggleBtn" class="btn btn-toggle" title="Toggle between individual and multi-patient view">📊 Multi View</button>
+            </div>
+        </section>
+
+        <!-- Metrics Cards -->
+        <section class="metrics-section">
+            <!-- BPM Card -->
+            <div class="metric-card" id="bpmCard">
+                <button class="zoom-btn" onclick="openFullscreenStats('bpm')" title="Expand Stats">🔍</button>
+                <div class="metric-header">
+                    <h3>❤️ Heart Rate (BPM)</h3>
+                    <span class="metric-unit">beats/min</span>
+                </div>
+                <div class="metric-current" id="bpmCurrent">--</div>
+                <div class="metric-stats">
+                    <div class="stat-item">
+                        <span class="stat-label">Avg:</span>
+                        <span class="stat-value" id="bpmAvg">--</span>
+                        <span class="stat-zoom" onclick="(function(e){ e.stopPropagation(); openFullscreenStats('bpm'); return false; })(event)" style="cursor: pointer;">🔍</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-label">Min:</span>
+                        <span class="stat-value" id="bpmMin">--</span>
+                        <span class="stat-zoom" onclick="(function(e){ e.stopPropagation(); openFullscreenStats('bpm'); return false; })(event)" style="cursor: pointer;">🔍</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-label">Max:</span>
+                        <span class="stat-value" id="bpmMax">--</span>
+                        <span class="stat-zoom" onclick="(function(e){ e.stopPropagation(); openFullscreenStats('bpm'); return false; })(event)" style="cursor: pointer;">🔍</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- SpO2 Card -->
+            <div class="metric-card" id="spo2Card">
+                <button class="zoom-btn" onclick="openFullscreenStats('spo2')" title="Expand Stats">🔍</button>
+                <div class="metric-header">
+                    <h3>🫁 Oxygen Level (SpO2)</h3>
+                    <span class="metric-unit">%</span>
+                </div>
+                <div class="metric-current" id="spo2Current">--</div>
+                <div class="metric-stats">
+                    <div class="stat-item">
+                        <span class="stat-label">Avg:</span>
+                        <span class="stat-value" id="spo2Avg">--</span>
+                        <span class="stat-zoom" onclick="(function(e){ e.stopPropagation(); openFullscreenStats('spo2'); return false; })(event)" style="cursor: pointer;">🔍</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-label">Min:</span>
+                        <span class="stat-value" id="spo2Min">--</span>
+                        <span class="stat-zoom" onclick="(function(e){ e.stopPropagation(); openFullscreenStats('spo2'); return false; })(event)" style="cursor: pointer;">🔍</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-label">Max:</span>
+                        <span class="stat-value" id="spo2Max">--</span>
+                        <span class="stat-zoom" onclick="(function(e){ e.stopPropagation(); openFullscreenStats('spo2'); return false; })(event)" style="cursor: pointer;">🔍</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Temperature Card -->
+            <div class="metric-card" id="tempCard">
+                <button class="zoom-btn" onclick="openFullscreenStats('temp')" title="Expand Stats">🔍</button>
+                <div class="metric-header">
+                    <h3>🌡️ Temperature</h3>
+                    <span class="metric-unit">°C</span>
+                </div>
+                <div class="metric-current" id="tempCurrent">--</div>
+                <div class="metric-stats">
+                    <div class="stat-item">
+                        <span class="stat-label">Avg:</span>
+                        <span class="stat-value" id="tempAvg">--</span>
+                        <span class="stat-zoom" onclick="(function(e){ e.stopPropagation(); openFullscreenStats('temp'); return false; })(event)" style="cursor: pointer;">🔍</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-label">Min:</span>
+                        <span class="stat-value" id="tempMin">--</span>
+                        <span class="stat-zoom" onclick="(function(e){ e.stopPropagation(); openFullscreenStats('temp'); return false; })(event)" style="cursor: pointer;">🔍</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-label">Max:</span>
+                        <span class="stat-value" id="tempMax">--</span>
+                        <span class="stat-zoom" onclick="(function(e){ e.stopPropagation(); openFullscreenStats('temp'); return false; })(event)" style="cursor: pointer;">🔍</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Humidity Card -->
+            <div class="metric-card" id="humidityCard">
+                <button class="zoom-btn" onclick="openFullscreenStats('humidity')" title="Expand Stats">🔍</button>
+                <div class="metric-header">
+                    <h3>💧 Humidity</h3>
+                    <span class="metric-unit">%</span>
+                </div>
+                <div class="metric-current" id="humidityCurrent">--</div>
+                <div class="metric-stats">
+                    <div class="stat-item">
+                        <span class="stat-label">Avg:</span>
+                        <span class="stat-value" id="humidityAvg">--</span>
+                        <span class="stat-zoom" onclick="(function(e){ e.stopPropagation(); openFullscreenStats('humidity'); return false; })(event)" style="cursor: pointer;">🔍</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-label">Min:</span>
+                        <span class="stat-value" id="humidityMin">--</span>
+                        <span class="stat-zoom" onclick="(function(e){ e.stopPropagation(); openFullscreenStats('humidity'); return false; })(event)" style="cursor: pointer;">🔍</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-label">Max:</span>
+                        <span class="stat-value" id="humidityMax">--</span>
+                        <span class="stat-zoom" onclick="(function(e){ e.stopPropagation(); openFullscreenStats('humidity'); return false; })(event)" style="cursor: pointer;">🔍</span>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Charts Section -->
+        <section class="charts-section">
+            <div class="chart-container">
+                <button class="zoom-btn" onclick="openFullscreenGraph('bpm', state.chartData.bpm)" title="Expand">🔍</button>
+                <h3>Heart Rate Trend</h3>
+                <canvas id="bpmChart"></canvas>
+            </div>
+
+            <div class="chart-container">
+                <button class="zoom-btn" onclick="openFullscreenGraph('spo2', state.chartData.spo2)" title="Expand">🔍</button>
+                <h3>Oxygen Level Trend</h3>
+                <canvas id="spo2Chart"></canvas>
+            </div>
+
+            <div class="chart-container">
+                <button class="zoom-btn" onclick="openFullscreenGraph('temp', state.chartData.temp)" title="Expand">🔍</button>
+                <h3>Temperature Trend</h3>
+                <canvas id="tempChart"></canvas>
+            </div>
+
+            <div class="chart-container">
+                <button class="zoom-btn" onclick="openFullscreenGraph('humidity', state.chartData.humidity)" title="Expand">🔍</button>
+                <h3>Humidity Trend</h3>
+                <canvas id="humidityChart"></canvas>
+            </div>
+        </section>
+
+        <!-- Multi-Patient View (Hidden by default) -->
+        <section class="multi-patient-section" id="multiPatientView" style="display: none;">
+            <h2>👥 All Patients Overview</h2>
+            <div class="patients-grid" id="patientsGrid">
+                <!-- Patient cards will be inserted here by JavaScript -->
+            </div>
+        </section>
+
+        <!-- Footer -->
+        <footer class="footer">
+            <p>PulseStream v1.0 | Real-time Health Monitoring System</p>
+            <p class="update-time">Last update: <span id="lastUpdate">--</span></p>
+        </footer>
+    </div>
+
+    <!-- Full-Screen Graph Modal -->
+    <div class="fullscreen-modal" id="fullscreenModal" style="display: none;">
+        <div class="fullscreen-modal-content">
+            <button class="close-fullscreen" id="closeFullscreenBtn">✕</button>
+            <h2 id="fullscreenTitle">Graph View</h2>
+            <div class="fullscreen-chart-container">
+                <canvas id="fullscreenChart"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <!-- Stats Modal -->
+        <div class="fullscreen-modal" id="statsModal" style="display: none;">
+            <div class="fullscreen-modal-content stats-modal-content">
+            <button class="close-fullscreen" id="closeStatsBtn">✕</button>
+            <h2 id="statsTitle">Statistics</h2>
+            <div class="stats-display" id="statsDisplay">
+                
+                <div class="stat-display-item">
+                    <span class="stat-display-label">Current:</span>
+                    <span class="stat-display-value" id="statsCurrentValue">--</span>
+                </div>
+                
+                <div class="stat-display-item">
+                    <span class="stat-display-label">Average:</span>
+                    <span class="stat-display-value" id="statsAvgValue">--</span>
+                </div>
+                <div class="stat-display-item">
+                    <span class="stat-display-label">Minimum:</span>
+                    <span class="stat-display-value" id="statsMinValue">--</span>
+                </div>
+                <div class="stat-display-item">
+                    <span class="stat-display-label">Maximum:</span>
+                    <span class="stat-display-value" id="statsMaxValue">--</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>

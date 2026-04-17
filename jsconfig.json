@@ -1,0 +1,18 @@
+{
+  "compilerOptions": {
+    "ignoreDeprecations": "6.0",
+    "baseUrl": "./src",
+    "paths": {
+      "@configs/*": ["configs/*"],
+      "@utils/*": ["utils/*"],
+      "@services/*": ["services/*"],
+      "@controllers/*": ["controllers/*"],
+      "@responses/*": ["responses/*"],
+      "@routers/*": ["routers/*"],
+      "@middlewares/*": ["middlewares/*"],
+      "@/*": ["*"]
+    }
+  },
+  "include": ["."],
+  "exclude": ["node_modules"]
+}
