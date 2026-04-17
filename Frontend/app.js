@@ -60,6 +60,7 @@ let state = {
 // ========================================
 
 function initializeSocket() {
+    console.log('🔌 Attempting to connect to Socket.IO...');
     state.socket = io(BACKEND_URL, {
         reconnection: true,
         reconnectionDelay: 1000,
@@ -76,12 +77,23 @@ function initializeSocket() {
     // Data events
     state.socket.on('healthData', handleHealthData);
     state.socket.on('error', handleSocketError);
+    
+    // 🔴 DEBUG: Log all events
+    state.socket.onAny((event, ...args) => {
+        if (event !== 'healthData') {
+            console.log(`📨 Socket event: ${event}`, args);
+        }
+    });
 }
 
 function handleConnect() {
     console.log('✅ Connected to backend');
     state.isConnected = true;
     updateConnectionStatus(true);
+
+    // 🔴 DEBUG
+    console.log(`🔌 Socket ID: ${state.socket.id}`);
+    console.log(`🔌 Connected: ${state.socket.connected}`);
 
     // Fetch available patients and auto-select first one
     fetchAndSelectFirstPatient();
@@ -145,6 +157,10 @@ function handleHealthData(data) {
         // Parse data - backend format: { current: {...}, stats: {...} }
         const currentData = data.current || data.latestData || data || {};
         const statsData = data.stats || {};
+
+        // 🔴 DEBUG: Log incoming values
+        console.log(`   📥 Current Values: BPM=${currentData.bpm}, SpO2=${currentData.spo2}, Temp=${currentData.temp}, Humidity=${currentData.humidity}, TS=${currentData.timestamp}`);
+        console.log(`   📊 Stats: BPM_Avg=${statsData.bpm?.average}, SpO2_Avg=${statsData.spo2?.average}`);
 
         // Validate data has at least one metric
         if (!currentData.bpm && !currentData.spo2 && !currentData.temp && !currentData.humidity) {
@@ -655,7 +671,12 @@ async function selectPatient(patientId = null) {
 
     // 2. WebSocket subscribe karo naye real-time data ke liye
     if (state.socket && state.socket.connected) {
+        console.log(`📤 Emitting selectPatient event to Socket.IO...`);
         state.socket.emit('selectPatient', patientId);
+        console.log(`   Sent: patientId=${patientId}, Socket connected: ${state.socket.connected}`);
+    } else {
+        console.warn(`⚠️  Socket not connected! Cannot subscribe to patient`);
+        console.log(`   state.socket=${!!state.socket}, connected=${state.socket?.connected}`);
     }
 
     // 3. Database se history / initial data fetch karo

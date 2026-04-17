@@ -36,6 +36,9 @@ const postHealthData = async (req, res) => {
         const { body } = req;
         const io = req.app.get("io");
         
+        // 🔴 DEBUG: Log incoming data
+        logWithTime(`   📨 Received: BPM=${body.bpm}, SpO2=${body.spo2}°, Temp=${body.temp}°C, Humidity=${body.humidity}%`);
+        
         // Validate incoming data
         const validation = validateHealthData(body);
         if (!validation.isValid) {
@@ -59,11 +62,14 @@ const postHealthData = async (req, res) => {
             humidity: sanitized.humidity
         });
         
-        logWithTime(`✅ Health data stored for patient ${sanitized.patientId}`);
+        logWithTime(`✅ Stored: BPM=${stored.bpm}, SpO2=${stored.spo2}, Temp=${stored.temp}, Humidity=${stored.humidity}`);
         
         // Emit to Socket.IO subscribers
         if (io && io.emitHealthData) {
+            logWithTime(`🔄 Emitting to Socket.IO subscribers...`);
             io.emitHealthData(sanitized.patientId, stored);
+        } else {
+            logWithTime(`⚠️  Socket.IO not available for real-time emission`);
         }
         
         // Return stored data

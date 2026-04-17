@@ -105,7 +105,8 @@ function getPatientCountFromArgs() {
 function generatePatientIds(count) {
     const patients = [];
     for (let i = 1; i <= count; i++) {
-        patients.push(`test_patient_${i}_${Date.now()}`);
+        // Fixed patient IDs - will accumulate data across runs
+        patients.push(`test_patient_${i}`);
     }
     return patients;
 }
@@ -156,7 +157,8 @@ async function startTestDataGenerator(patientCount) {
 
             if (success) {
                 dataCount++;
-                log(`[${dataCount}] ${new Date().toLocaleTimeString()} | ${patientId.substring(0, 20)}... | ${formatHealthData(healthData)} | ${status}`, 'green');
+                // 🔴 ENHANCED DEBUG: Show timestamp to prove it's constantly changing
+                log(`[${dataCount}] ${new Date().toLocaleTimeString('en-US', {hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit', fractionalSecondDigits: 3})} | ${patientId.substring(0, 20)}... | ${formatHealthData(healthData)} | ${status}`, 'green');
             } else {
                 errorCount++;
             }
