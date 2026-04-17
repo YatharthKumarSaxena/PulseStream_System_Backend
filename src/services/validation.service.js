@@ -9,12 +9,14 @@ const { logWithTime } = require("@utils/time-stamps.util");
 /**
  * Validate health data object
  * Checks required fields and data types
+ * patientId is optional - backend assigns default if not provided
  * 
- * @param {Object} data - Data to validate: { patientId, bpm, spo2, temp, humidity }
+ * @param {Object} data - Data to validate: { bpm, spo2, temp, humidity, patientId (optional) }
  * @returns {Object} Validation result: { isValid: boolean, errors: Array<string> }
  */
 const validateHealthData = (data) => {
     const errors = [];
+    const cleanedData = {};
     
     logWithTime("🔍 Validating health data...");
     
@@ -24,56 +26,46 @@ const validateHealthData = (data) => {
         return { isValid: false, errors };
     }
     
-    // Validate patientId
-    if (!data.patientId) {
-        errors.push("patientId is required");
-    } else if (typeof data.patientId !== "string" || data.patientId.trim() === "") {
-        errors.push("patientId must be a non-empty string");
+    // patientId is optional
+    cleanedData.patientId = data.patientId || null;
+    if (data.patientId && (typeof data.patientId !== "string" || data.patientId.trim() === "")) {
+        cleanedData.patientId = null;
     }
     
-    // Validate bpm
-    if (data.bpm === undefined || data.bpm === null) {
-        errors.push("bpm is required");
-    } else if (typeof data.bpm !== "number" || isNaN(data.bpm)) {
-        errors.push("bpm must be a valid number");
-    } else if (data.bpm < 0 || data.bpm > 300) {
-        errors.push("bpm must be between 0 and 300");
-    }
+    // Helper function to validate and clean a metric
+    const validateMetric = (value, metric, min, max) => {
+        if (value === undefined || value === null) {
+            return null;
+        }
+        if (typeof value !== "number" || isNaN(value)) {
+            logWithTime(`⚠️  ${metric} invalid type (${value}), setting to null`);
+            return null;
+        }
+        if (value < min || value > max) {
+            logWithTime(`⚠️  ${metric} out of range (${value}), setting to null`);
+            return null;
+        }
+        return value;
+    };
     
-    // Validate spo2
-    if (data.spo2 === undefined || data.spo2 === null) {
-        errors.push("spo2 is required");
-    } else if (typeof data.spo2 !== "number" || isNaN(data.spo2)) {
-        errors.push("spo2 must be a valid number");
-    } else if (data.spo2 < 0 || data.spo2 > 100) {
-        errors.push("spo2 must be between 0 and 100");
-    }
+    // Validate all metrics - set to null if invalid
+    cleanedData.bpm = validateMetric(data.bpm, "BPM", 0, 300);
+    cleanedData.spo2 = validateMetric(data.spo2, "SpO2", 0, 100);
+    cleanedData.temp = validateMetric(data.temp, "Temp", 32, 110);
+    cleanedData.humidity = validateMetric(data.humidity, "Humidity", 0, 100);
     
-    // Validate temp
-    if (data.temp === undefined || data.temp === null) {
-        errors.push("temp is required");
-    } else if (typeof data.temp !== "number" || isNaN(data.temp)) {
-        errors.push("temp must be a valid number");
-    } else if (data.temp < 32 || data.temp > 110) {
-        errors.push("temp must be between 32°F and 110°F");
-    }
+    // Check if at least ONE metric is valid (not all null)
+    const hasValidMetric = cleanedData.bpm !== null || cleanedData.spo2 !== null || 
+                          cleanedData.temp !== null || cleanedData.humidity !== null;
     
-    // Validate humidity
-    if (data.humidity === undefined || data.humidity === null) {
-        errors.push("humidity is required");
-    } else if (typeof data.humidity !== "number" || isNaN(data.humidity)) {
-        errors.push("humidity must be a valid number");
-    } else if (data.humidity < 0 || data.humidity > 100) {
-        errors.push("humidity must be between 0 and 100");
-    }
-    
-    if (errors.length > 0) {
-        logWithTime(`❌ Validation failed: ${errors.join(", ")}`);
+    if (!hasValidMetric) {
+        errors.push("At least one metric (bpm, spo2, temp, humidity) must be valid");
+        logWithTime(`❌ Validation failed: no valid metrics`);
         return { isValid: false, errors };
     }
     
     logWithTime("✅ Health data validation passed");
-    return { isValid: true, errors: [] };
+    return { isValid: true, errors: [], cleanedData };
 };
 
 /**

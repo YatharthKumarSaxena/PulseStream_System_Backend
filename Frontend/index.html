@@ -25,16 +25,6 @@
 
         <!-- Controls Section -->
         <section class="controls-section">
-            <div class="control-group">
-                <label for="patientSelect">👤 Select Patient:</label>
-                <input 
-                    type="text" 
-                    id="patientSelect" 
-                    placeholder="Enter Patient ID (e.g., patient_123)"
-                    class="patient-input"
-                >
-                <button id="selectPatientBtn" class="btn btn-primary">Switch Patient</button>
-            </div>
 
             <div class="control-group">
                 <label>⏱️ Select Time Window:</label>
@@ -57,7 +47,6 @@
                     🔴 Disconnected
                 </span>
                 <span class="patients-info" id="patientsInfo">👥 Patients: --</span>
-                <button id="viewToggleBtn" class="btn btn-toggle" title="Toggle between individual and multi-patient view">📊 Multi View</button>
             </div>
         </section>
 
@@ -196,14 +185,6 @@
                 <button class="zoom-btn" onclick="openFullscreenGraph('humidity', state.chartData.humidity)" title="Expand">🔍</button>
                 <h3>Humidity Trend</h3>
                 <canvas id="humidityChart"></canvas>
-            </div>
-        </section>
-
-        <!-- Multi-Patient View (Hidden by default) -->
-        <section class="multi-patient-section" id="multiPatientView" style="display: none;">
-            <h2>👥 All Patients Overview</h2>
-            <div class="patients-grid" id="patientsGrid">
-                <!-- Patient cards will be inserted here by JavaScript -->
             </div>
         </section>
 

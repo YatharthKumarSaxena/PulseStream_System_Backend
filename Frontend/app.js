@@ -26,7 +26,6 @@ let state = {
     currentWindow: 15, // minutes
     isConnected: false,
     nightMode: localStorage.getItem('nightMode') === 'true',
-    viewMode: 'individual', // 'individual' or 'multi'
     chartInstances: {},
     chartData: {
         bpm: [],
@@ -39,12 +38,6 @@ let state = {
         spo2: { current: null, avg: null, min: null, max: null },
         temp: { current: null, avg: null, min: null, max: null },
         humidity: { current: null, avg: null, min: null, max: null }
-    },
-    allPatients: {}, // Track all patients data for multi-view
-    pagination: {
-        currentPage: 1,
-        itemsPerPage: 6,
-        totalItems: 0
     },
     // Raw data with timestamps for time window filtering
     rawChartData: {
@@ -101,25 +94,34 @@ function handleConnect() {
 
 async function fetchAndSelectFirstPatient() {
     try {
-        const response = await fetch(`${BACKEND_URL}/api/heartbeats/patients`);
-        const result = await response.json();
-        
-        if (result.success && result.data.patients && result.data.patients.length > 0) {
-            const patients = result.data.patients;
-            console.log(`📊 Available patients: ${patients.length}`);
+        // Since we're using default_patient, just initialize the socket connection
+        if (state.socket && state.socket.connected) {
+            console.log('📊 Initializing connection for default_patient');
+            state.currentPatient = 'default_patient';
+            updatePatientsCount(1);
             
-            // Update patients count display
-            updatePatientsCount(patients.length);
+            // Emit selectPatient event to subscribe to default_patient data
+            state.socket.emit('selectPatient', 'default_patient');
             
-            // Select first patient
-            const firstPatient = patients[0];
-            selectPatient(firstPatient);
+            // Try to fetch initial data
+            try {
+                const response = await fetch(`${BACKEND_URL}/api/heartbeats/data/default_patient`);
+                if (response.ok) {
+                    const result = await response.json();
+                    console.log('📦 Initial data received:', result);
+                    if (result.data) {
+                        handleHealthData(result.data);
+                    }
+                }
+            } catch (e) {
+                console.warn('⚠️ Initial data fetch failed (waiting for real-time data):', e);
+            }
         } else {
-            console.warn('⚠️ No patients available yet');
-            setTimeout(fetchAndSelectFirstPatient, 2000);
+            console.warn('⚠️ Socket not connected yet');
+            setTimeout(fetchAndSelectFirstPatient, 1000);
         }
     } catch (err) {
-        console.error('❌ Error fetching patients:', err);
+        console.error('❌ Error initializing patient:', err);
         setTimeout(fetchAndSelectFirstPatient, 2000);
     }
 }
@@ -172,23 +174,17 @@ function handleHealthData(data) {
         console.log('   Current:', currentData);
         console.log('   Stats:', statsData);
 
-        // 🔴 FIX: Only update UI if in individual view
-        if (state.viewMode === 'individual') {
-            // Update internal metrics state
-            updateMetrics({ current: currentData, stats: statsData });
-            
-            // Update charts
-            addToChartData(currentData);
-            updateCharts();
-            
-            // Update UI displays - pass current data for display functions
-            updateMetricsDisplay(currentData, statsData);
-            updateStatus(determineStatus(currentData), getStatusIcon(currentData));
-            updateLastUpdate();
-        } else {
-            // In multi-view, skip realtime updates (use only static fetched data)
-            console.log('📊 Multi-view active - not updating metrics from realtime data');
-        }
+        // Update internal metrics state
+        updateMetrics({ current: currentData, stats: statsData });
+        
+        // Update charts
+        addToChartData(currentData);
+        updateCharts();
+        
+        // Update UI displays - pass current data for display functions
+        updateMetricsDisplay(currentData, statsData);
+        updateStatus(determineStatus(currentData), getStatusIcon(currentData));
+        updateLastUpdate();
         
         console.log('✅ handleHealthData completed successfully\n');
     } catch (error) {
@@ -236,24 +232,25 @@ function addToChartData(current) {
     const timestamp = new Date().toLocaleTimeString();
 
     // Store raw data with actual timestamp (for time window filtering)
+    // Keep null values as null so they don't appear as 0 on charts
     state.rawChartData.bpm.push({
         x: timestamp,
-        y: current.bpm || 0,
+        y: current.bpm !== undefined && current.bpm !== null ? current.bpm : null,
         t: nowMs // timestamp in milliseconds
     });
     state.rawChartData.spo2.push({
         x: timestamp,
-        y: current.spo2 || 0,
+        y: current.spo2 !== undefined && current.spo2 !== null ? current.spo2 : null,
         t: nowMs
     });
     state.rawChartData.temp.push({
         x: timestamp,
-        y: current.temp || 0,
+        y: current.temp !== undefined && current.temp !== null ? current.temp : null,
         t: nowMs
     });
     state.rawChartData.humidity.push({
         x: timestamp,
-        y: current.humidity || 0,
+        y: current.humidity !== undefined && current.humidity !== null ? current.humidity : null,
         t: nowMs
     });
 
@@ -313,7 +310,8 @@ function calculateStatsFromAccumulatedData() {
             return { avg: null, min: null, max: null, dataPoints: 0, timeRange: '0m' };
         }
         
-        const values = dataArray.map(point => point.y).filter(v => !isNaN(v));
+        // Filter out null and NaN values (only keep valid numbers)
+        const values = dataArray.map(point => point.y).filter(v => v !== null && v !== undefined && !isNaN(v));
         if (values.length === 0) {
             return { avg: null, min: null, max: null, dataPoints: 0, timeRange: '0m' };
         }
@@ -446,7 +444,9 @@ function formatValue(value, metric) {
 
     if (metric === 'temp') {
         return value.toFixed(1);
-    } else if (metric === 'humidity' || metric === 'spo2') {
+    } else if (metric === 'humidity') {
+        return value.toFixed(1);  // Show with 1 decimal like temperature
+    } else if (metric === 'spo2') {
         return Math.round(value);
     } else {
         return Math.round(value);
@@ -545,8 +545,8 @@ function initializeCharts() {
             metric: 'bpm',
             label: 'Heart Rate (BPM)',
             color: CHART_COLORS.bpm,
-            min: 40,
-            max: 160
+            min: -50,
+            max: 250
         },
         {
             id: 'spo2Chart',
@@ -561,8 +561,8 @@ function initializeCharts() {
             metric: 'temp',
             label: 'Temperature (°C)',
             color: CHART_COLORS.temp,
-            min: 35,
-            max: 40
+            min: 10,
+            max: 60
         },
         {
             id: 'humidityChart',
@@ -618,7 +618,10 @@ function initializeCharts() {
                         beginAtZero: false,
                         min: config.min,
                         max: config.max,
-                        ticks: { font: { size: 11 } },
+                        ticks: { 
+                            font: { size: 11 },
+                            stepSize: config.metric === 'temp' ? 10 : (config.metric === 'bpm' ? 50 : undefined)
+                        },
                         grid: { color: 'rgba(0, 0, 0, 0.05)' }
                     },
                     x: {
@@ -649,63 +652,6 @@ function updateCharts() {
 // ========================================
 // Event Handlers
 // ========================================
-
-async function selectPatient(patientId = null) {
-    if (!patientId) {
-        patientId = document.getElementById('patientSelect').value.trim();
-    }
-
-    if (!patientId) {
-        alert('Please enter a Patient ID');
-        return;
-    }
-
-    console.log(`📍 Switching to patient: ${patientId}`);
-    state.currentPatient = patientId;
-
-    // 1. Purana chart aur display clear karo
-    state.chartData = { bpm: [], spo2: [], temp: [], humidity: [] };
-    state.rawChartData = { bpm: [], spo2: [], temp: [], humidity: [] };
-    updateCharts();
-    clearMetricsDisplay();
-
-    // 2. WebSocket subscribe karo naye real-time data ke liye
-    if (state.socket && state.socket.connected) {
-        console.log(`📤 Emitting selectPatient event to Socket.IO...`);
-        state.socket.emit('selectPatient', patientId);
-        console.log(`   Sent: patientId=${patientId}, Socket connected: ${state.socket.connected}`);
-    } else {
-        console.warn(`⚠️  Socket not connected! Cannot subscribe to patient`);
-        console.log(`   state.socket=${!!state.socket}, connected=${state.socket?.connected}`);
-    }
-
-    // 3. Database se history / initial data fetch karo
-    try {
-        console.log(`📥 Fetching initial DB data for ${patientId}...`);
-        const response = await fetch(`${BACKEND_URL}/api/heartbeats/data/${patientId}`);
-        
-        if (response.ok) {
-            const result = await response.json();
-            console.log('📦 API Response Received:', result);
-            
-            // Format adjust karo API response ka
-            const currentData = result?.data?.current || result?.data || result || {};
-            const statsData = result?.data?.stats || {};
-
-            if (currentData.bpm || currentData.spo2) {
-                console.log('✅ Initial data found! Populating UI instantly...');
-                handleHealthData({ current: currentData, stats: statsData });
-            } else {
-                updateStatus('Waiting for new data from device...', '⏳', 'warning');
-            }
-        }
-    } catch (error) {
-        console.error('❌ Error fetching initial patient data:', error);
-    }
-
-    // Input box update karo
-    document.getElementById('patientSelect').value = patientId;
-}
 
 function changeTimeWindow(minutes) {
     if (!state.socket) {
@@ -749,16 +695,6 @@ function clearMetricsDisplay() {
 // ========================================
 
 function attachEventListeners() {
-    // Patient selection - wrap in arrow function to avoid passing event object
-    document.getElementById('selectPatientBtn').addEventListener('click', () => selectPatient());
-
-    // Allow Enter key to select patient
-    document.getElementById('patientSelect').addEventListener('keypress', (e) => {
-        if (e.key === 'Enter') {
-            selectPatient();
-        }
-    });
-
     // Time window buttons
     document.querySelectorAll('.btn-window').forEach(btn => {
         btn.addEventListener('click', () => {
@@ -766,12 +702,6 @@ function attachEventListeners() {
             changeTimeWindow(minutes);
         });
     });
-
-    // View toggle button
-    const viewToggleBtn = document.getElementById('viewToggleBtn');
-    if (viewToggleBtn) {
-        viewToggleBtn.addEventListener('click', toggleViewMode);
-    }
 
     // Night mode button
     const nightModeBtn = document.getElementById('nightModeBtn');
@@ -863,245 +793,6 @@ function applyNightMode() {
         html.setAttribute('data-theme', 'light');
         document.getElementById('nightModeToggle').textContent = '🌙';
     }
-}
-
-/**
- * Toggle between Individual and Multi-Patient View
- */
-function toggleViewMode() {
-    console.log('🔄 Toggling view mode...');
-    
-    state.viewMode = state.viewMode === 'individual' ? 'multi' : 'individual';
-    
-    const multiView = document.getElementById('multiPatientView');
-    const metricsSection = document.querySelector('.metrics-section');
-    const chartsSection = document.querySelector('.charts-section');
-    const viewToggleBtn = document.getElementById('viewToggleBtn');  // ADD THIS LINE
-    
-    if (state.viewMode === 'multi') {
-        if (multiView) multiView.style.display = 'block';
-        if (metricsSection) metricsSection.style.display = 'none';
-        if (chartsSection) chartsSection.style.display = 'none';
-        if (viewToggleBtn) viewToggleBtn.textContent = '👤 Individual View';  // ADD THIS LINE
-        fetchAllPatientsData();
-    } else {
-        if (multiView) multiView.style.display = 'none';
-        if (metricsSection) metricsSection.style.display = 'grid';
-        if (chartsSection) chartsSection.style.display = 'grid';
-        if (viewToggleBtn) viewToggleBtn.textContent = '📊 Multi View';  // ADD THIS LINE
-    }
-    
-    console.log(`✅ View mode changed to: ${state.viewMode}`);
-}
-
-/**
- * Fetch all available patients and their latest data from backend
- */
-function fetchAllPatientsData() {
-    try {
-        const response = fetch(`${BACKEND_URL}/api/heartbeats/patients`, {
-            method: 'GET',
-            headers: { 'Content-Type': 'application/json' }
-        });
-
-        if (!response.ok) {
-            throw new Error(`HTTP error! status: ${response.status}`);
-        }
-
-        const patientsData = response.json();
-        console.log('👥 Fetched all patients list:', patientsData);
-
-        // Clear previous data
-        state.allPatients = {};
-
-        // Store each patient's data in allPatients
-        if (patientsData.data && Array.isArray(patientsData.data.patients)) {
-            console.log(`📝 Total patients from API: ${patientsData.data.patients.length}`);
-
-            for (const patientId of patientsData.data.patients) {
-                
-                // 🔴 NAYA TRY-CATCH YAHAN HAI 🔴
-                try {
-                    // Fetch latest data for this patient
-                    const dataResponse = fetch(`${BACKEND_URL}/api/heartbeats/data/${patientId}`, {
-                        method: 'GET',
-                        headers: { 'Content-Type': 'application/json' }
-                    });
-
-                    if (dataResponse.ok) {
-                        const patientData = dataResponse.json();
-                        if (patientData.data && patientData.data.current) {
-                            state.allPatients[patientId] = {
-                                patientId: patientId,
-                                current: patientData.data.current,
-                                stats: patientData.data.stats
-                            };
-                            console.log(`✅ Fetched data for ${patientId}`);
-                        } else {
-                            throw new Error("No current data");
-                        }
-                    } else {
-                        throw new Error("API response not OK");
-                    }
-                } catch (innerError) {
-                    // Agar ek patient ka data fail ho, toh loop crash na ho, aage badhe!
-                    state.allPatients[patientId] = {
-                        patientId: patientId,
-                        current: { bpm: null, spo2: null, temp: null, humidity: null },
-                        stats: {}
-                    };
-                    console.log(`⏳ Added ${patientId} with placeholder data (Fetch failed)`);
-                }
-                // 🔴 TRY-CATCH END 🔴
-
-            }
-        }
-
-        console.log(`📊 Total patients stored: ${Object.keys(state.allPatients).length}`);
-        
-        // Render all patient cards
-        renderPatientCards();
-    } catch (error) {
-        console.error('❌ Error fetching patients data:', error);
-        renderPatientCards(); // Render with available data
-    }
-}
-
-/**
- * Render all patient cards in multi-patient view with pagination
- */
-function renderPatientCards() {
-    const patientsGrid = document.getElementById('patientsGrid');
-    if (!patientsGrid) return;
-
-    // Clear existing cards
-    patientsGrid.innerHTML = '';
-
-    // Get unique patients from allPatients
-    const patients = Object.values(state.allPatients);
-    state.pagination.totalItems = patients.length;
-    
-    if (patients.length === 0) {
-        patientsGrid.innerHTML = '<p style="grid-column: 1/-1; text-align: center; color: var(--text-secondary); padding: 40px;">No patients connected yet...</p>';
-        return;
-    }
-
-    // Calculate pagination
-    const itemsPerPage = state.pagination.itemsPerPage;
-    const totalPages = Math.ceil(patients.length / itemsPerPage);
-    const currentPage = Math.max(1, Math.min(state.pagination.currentPage, totalPages));
-    state.pagination.currentPage = currentPage;
-    
-    const startIndex = (currentPage - 1) * itemsPerPage;
-    const endIndex = startIndex + itemsPerPage;
-    const patientsToShow = patients.slice(startIndex, endIndex);
-
-    // Render card for each patient on current page - append directly
-    patientsToShow.forEach(patient => {
-        const card = createPatientCard(patient);
-        patientsGrid.appendChild(card);
-    });
-
-    // Add pagination controls
-    const paginationDiv = document.createElement('div');
-    paginationDiv.style.gridColumn = '1/-1';
-    paginationDiv.style.display = 'flex';
-    paginationDiv.style.justifyContent = 'center';
-    paginationDiv.style.alignItems = 'center';
-    paginationDiv.style.gap = '15px';
-    paginationDiv.style.marginTop = '20px';
-    paginationDiv.style.padding = '20px';
-
-    // Previous button
-    const prevBtn = document.createElement('button');
-    prevBtn.textContent = '← Previous';
-    prevBtn.className = 'btn btn-primary';
-    prevBtn.style.opacity = currentPage === 1 ? '0.5' : '1';
-    prevBtn.style.cursor = currentPage === 1 ? 'not-allowed' : 'pointer';
-    prevBtn.disabled = currentPage === 1;
-    prevBtn.addEventListener('click', () => {
-        if (currentPage > 1) {
-            state.pagination.currentPage = currentPage - 1;
-            renderPatientCards();
-        }
-    });
-
-    // Page info
-    const pageInfo = document.createElement('span');
-    pageInfo.textContent = `Page ${currentPage} of ${totalPages} (${patients.length} patients)`;
-    pageInfo.style.color = 'var(--text-secondary)';
-    pageInfo.style.fontSize = '0.9em';
-
-    // Next button
-    const nextBtn = document.createElement('button');
-    nextBtn.textContent = 'Next →';
-    nextBtn.className = 'btn btn-primary';
-    nextBtn.style.opacity = currentPage === totalPages ? '0.5' : '1';
-    nextBtn.style.cursor = currentPage === totalPages ? 'not-allowed' : 'pointer';
-    nextBtn.disabled = currentPage === totalPages;
-    nextBtn.addEventListener('click', () => {
-        if (currentPage < totalPages) {
-            state.pagination.currentPage = currentPage + 1;
-            renderPatientCards();
-        }
-    });
-
-    paginationDiv.appendChild(prevBtn);
-    paginationDiv.appendChild(pageInfo);
-    paginationDiv.appendChild(nextBtn);
-    patientsGrid.appendChild(paginationDiv);
-
-    console.log(`🎯 Rendered ${patientsToShow.length} patient cards (Page ${currentPage}/${totalPages})`);
-}
-
-/**
- * Create a patient card element
- */
-function createPatientCard(patient) {
-    const card = document.createElement('div');
-    card.className = 'patient-card';
-    card.style.cursor = 'pointer';
-
-    // Get current and stats for this patient
-    const bpm = patient.current?.bpm ?? '--';
-    const spo2 = patient.current?.spo2 ?? '--';
-    const temp = patient.current?.temp ?? '--';
-    const humidity = patient.current?.humidity ?? '--';
-
-    // Status icon
-    const statusIcon = getStatusIcon(patient.current || {});
-    
-    // Build card HTML
-    card.innerHTML = `
-        <h3>${patient.patientId}</h3>
-        <div class="metric-row">
-            <span class="metric-label">❤️ BPM:</span>
-            <span class="metric-value">${formatValue(bpm, 'bpm')}</span>
-        </div>
-        <div class="metric-row">
-            <span class="metric-label">🫁 SpO2:</span>
-            <span class="metric-value">${formatValue(spo2, 'spo2')}%</span>
-        </div>
-        <div class="metric-row">
-            <span class="metric-label">🌡️ Temp:</span>
-            <span class="metric-value">${formatValue(temp, 'temp')}°C</span>
-        </div>
-        <div class="metric-row">
-            <span class="metric-label">💧 Humidity:</span>
-            <span class="metric-value">${formatValue(humidity, 'humidity')}%</span>
-        </div>
-        <div class="patient-status" style="background: ${getStatusColor(patient.current || {})}; color: white;">
-            ${statusIcon} ${determineStatus(patient.current || {})}
-        </div>
-    `;
-
-    // Click handler to switch to individual view for this patient
-    card.addEventListener('click', () => {
-        selectPatient(patient.patientId);
-        toggleViewMode(); // Switch back to individual view
-    });
-
-    return card;
 }
 
 /**

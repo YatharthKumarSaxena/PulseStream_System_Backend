@@ -65,18 +65,58 @@ function getRandomTemp() {
 }
 
 function getRandomHumidity() {
-    return Math.floor(Math.random() * 30 + 30);
+    // Can be integer or decimal (like 45.3% or 52%)
+    return Math.round((Math.random() * 30 + 30) * 10) / 10;
 }
 
 function generateHealthData(patientId) {
-    return {
-        patientId: patientId,
-        bpm: getRandomBPM(),
-        spo2: getRandomSpO2(),
-        temp: getRandomTemp(),
-        humidity: getRandomHumidity(),
-        timestamp: new Date().toISOString()
-    };
+    // Flexible field generation: sometimes send all fields, sometimes partial
+    const rand = Math.random();
+    let data = {};
+    
+    // 60% chance: send all 4 fields
+    if (rand < 0.60) {
+        data = {
+            bpm: getRandomBPM(),
+            spo2: getRandomSpO2(),
+            temp: getRandomTemp(),
+            humidity: getRandomHumidity()
+        };
+    }
+    // 20% chance: send bpm + spo2 only
+    else if (rand < 0.80) {
+        data = {
+            bpm: getRandomBPM(),
+            spo2: getRandomSpO2()
+        };
+    }
+    // 10% chance: send temp + humidity only
+    else if (rand < 0.90) {
+        data = {
+            temp: getRandomTemp(),
+            humidity: getRandomHumidity()
+        };
+    }
+    // 10% chance: send single random field
+    else {
+        const fieldChoice = Math.random();
+        if (fieldChoice < 0.25) {
+            data = { bpm: getRandomBPM() };
+        } else if (fieldChoice < 0.50) {
+            data = { spo2: getRandomSpO2() };
+        } else if (fieldChoice < 0.75) {
+            data = { temp: getRandomTemp() };
+        } else {
+            data = { humidity: getRandomHumidity() };
+        }
+    }
+    
+    return data;
+}
+
+// Get a random interval (1000-4000ms, random variation)
+function getRandomInterval() {
+    return Math.floor(Math.random() * 3000 + 1000);
 }
 
 function getStatus(data) {
@@ -86,7 +126,12 @@ function getStatus(data) {
 }
 
 function formatHealthData(data) {
-    return `❤️  ${data.bpm} bpm | 🫁 ${data.spo2}% | 🌡️  ${data.temp}°C | 💧 ${data.humidity}%`;
+    const fields = [];
+    if (data.bpm !== undefined) fields.push(`❤️  ${data.bpm} bpm`);
+    if (data.spo2 !== undefined) fields.push(`🫁 ${data.spo2}%`);
+    if (data.temp !== undefined) fields.push(`🌡️  ${data.temp}°C`);
+    if (data.humidity !== undefined) fields.push(`💧 ${data.humidity}%`);
+    return fields.length > 0 ? fields.join(' | ') : '(no fields)';
 }
 
 function getPatientCountFromArgs() {
@@ -142,23 +187,25 @@ async function startTestDataGenerator(patientCount) {
     patients.forEach((pid, idx) => {
         log(`  ${idx + 1}. ${pid}`, 'cyan');
     });
-    log(`\n⏱️  Interval: ${DATA_INTERVAL}ms between updates`, 'blue');
+    log(`\n⏱️  Interval: Random (1-4 seconds) between updates`, 'blue');
     log(`📍 Backend: ${BACKEND_URL}`, 'blue');
+    log(`📡 Field Selection: Flexible (all 4, pairs, or single fields)`, 'blue');
     log(`⏹️  Press Ctrl+C to stop\n`, 'yellow');
 
-    const interval = setInterval(async () => {
-        // Generate data for all patients
+    const sendDataForAllPatients = async () => {
+        // Generate and send data for all patients
         for (const patientId of patients) {
             const healthData = generateHealthData(patientId);
-            const status = getStatus(healthData);
+            const status = getStatus(healthData) || '⚠️  PARTIAL';
 
             // Send to backend
             const success = await sendDataToBackend(patientId, healthData);
 
             if (success) {
                 dataCount++;
-                // 🔴 ENHANCED DEBUG: Show timestamp to prove it's constantly changing
-                log(`[${dataCount}] ${new Date().toLocaleTimeString('en-US', {hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit', fractionalSecondDigits: 3})} | ${patientId.substring(0, 20)}... | ${formatHealthData(healthData)} | ${status}`, 'green');
+                // Show timestamp and field count
+                const fieldCount = Object.keys(healthData).length;
+                log(`[${dataCount}] ${new Date().toLocaleTimeString('en-US', {hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit', fractionalSecondDigits: 3})} | ${patientId.substring(0, 20)}... | ${formatHealthData(healthData)} (${fieldCount} fields) | ${status}`, 'green');
             } else {
                 errorCount++;
             }
@@ -168,20 +215,24 @@ async function startTestDataGenerator(patientCount) {
         if (dataCount % (10 * patientCount) === 0) {
             log(`\n✅ Data points sent: ${dataCount} | Errors: ${errorCount}\n`, 'blue');
         }
-    }, DATA_INTERVAL);
+        
+        // Schedule next send with random interval
+        const nextInterval = getRandomInterval();
+        setTimeout(sendDataForAllPatients, nextInterval);
+    };
+
+    // Start sending data immediately
+    await sendDataForAllPatients();
 
     // Handle graceful shutdown
     process.on('SIGINT', () => {
-        clearInterval(interval);
-
         logSection('🛑 Test Generator Stopped');
         log(`📊 Total data points sent: ${dataCount}`, 'green');
         log(`❌ Total errors: ${errorCount}`, 'red');
-        log(`⏱️  Run duration: ${((dataCount / patientCount) * DATA_INTERVAL / 1000).toFixed(1)} seconds`, 'green');
         log(`\n📝 Next Steps:`, 'cyan');
         log(`  1. Open Dashboard: http://localhost:5173`, 'cyan');
         log(`  2. Select Patient ID from list above`, 'cyan');
-        log(`  3. Watch real-time data stream`, 'cyan');
+        log(`  3. Watch real-time data stream with flexible data completeness`, 'cyan');
         log(`  4. Stop backend to clear all data`, 'cyan');
         log(`\n✅ Data is NOT persistent - cleared when backend stops!\n`, 'yellow');
 

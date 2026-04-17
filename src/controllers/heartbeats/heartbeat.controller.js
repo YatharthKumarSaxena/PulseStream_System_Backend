@@ -39,7 +39,12 @@ const postHealthData = async (req, res) => {
         // 🔴 DEBUG: Log incoming data
         logWithTime(`   📨 Received: BPM=${body.bpm}, SpO2=${body.spo2}°, Temp=${body.temp}°C, Humidity=${body.humidity}%`);
         
-        // Validate incoming data
+        // Assign default patientId if not provided
+        if (!body.patientId) {
+            body.patientId = "default_patient";
+        }
+        
+        // Validate incoming data (flexible: accepts partial, sets invalid to null)
         const validation = validateHealthData(body);
         if (!validation.isValid) {
             logWithTime(`❌ Validation failed: ${validation.errors.join(", ")}`);
@@ -51,15 +56,16 @@ const postHealthData = async (req, res) => {
             });
         }
         
-        // Sanitize data
-        const sanitized = sanitizeHealthData(body);
+        // Use cleaned data from validation (already sanitized with null handling)
+        const cleanedData = validation.cleanedData;
+        const patientId = cleanedData.patientId || "default_patient";
         
         // Store in Redis
-        const stored = await storeHealthData(sanitized.patientId, {
-            bpm: sanitized.bpm,
-            spo2: sanitized.spo2,
-            temp: sanitized.temp,
-            humidity: sanitized.humidity
+        const stored = await storeHealthData(patientId, {
+            bpm: cleanedData.bpm,
+            spo2: cleanedData.spo2,
+            temp: cleanedData.temp,
+            humidity: cleanedData.humidity
         });
         
         logWithTime(`✅ Stored: BPM=${stored.bpm}, SpO2=${stored.spo2}, Temp=${stored.temp}, Humidity=${stored.humidity}`);
@@ -67,7 +73,7 @@ const postHealthData = async (req, res) => {
         // Emit to Socket.IO subscribers
         if (io && io.emitHealthData) {
             logWithTime(`🔄 Emitting to Socket.IO subscribers...`);
-            io.emitHealthData(sanitized.patientId, stored);
+            io.emitHealthData(patientId, stored);
         } else {
             logWithTime(`⚠️  Socket.IO not available for real-time emission`);
         }
