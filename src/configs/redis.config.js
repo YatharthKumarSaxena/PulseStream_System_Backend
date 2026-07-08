@@ -8,6 +8,7 @@ module.exports = {
     REDIS_PORT: parseInt(process.env.REDIS_PORT) || 6379,
     REDIS_DB: parseInt(process.env.REDIS_DB) || 0,
     REDIS_PASSWORD: process.env.REDIS_PASSWORD || undefined,
+    REDIS_TLS: process.env.REDIS_TLS === "true",
     
     // Redis Key Prefixes
     HEALTH_DATA_PREFIX: "healthData:",
