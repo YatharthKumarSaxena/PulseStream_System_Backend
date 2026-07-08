@@ -34,12 +34,15 @@ const initializeRedis = async () => {
 
         // Create Redis client with v4 API format
         redisClient = redis.createClient({
+            username: "default",
+            password: REDIS_PASSWORD,
+
             socket: {
                 host: REDIS_HOST,
-                port: REDIS_PORT
+                port: Number(REDIS_PORT)
             },
-            password: REDIS_PASSWORD || undefined,
-            db: REDIS_DB || 0
+
+            database: Number(REDIS_DB)
         });
 
         // Event listeners
@@ -96,12 +99,6 @@ const closeRedis = async () => {
             errorMessage(err);
         }
     }
-};
-
-module.exports = {
-    initializeRedis,
-    getRedisClient,
-    closeRedis
 };
 
 module.exports = {
